@@ -612,90 +612,101 @@ function OrionLib:MakeWindow(WindowConfig)
 			WindowStuff
 		}), "Main")
 
-	-- watermark
-	local WatermarkFrame, WatermarkText, WatermarkConnection
-	local FrameTimer = tick()
-	local FrameCounter = 0
-	local FPS = 60
+		-- watermark
+		local WatermarkFrame, WatermarkText, WatermarkConnection
+		local FrameTimer = tick()
+		local FrameCounter = 0
+		local FPS = 60
 
-	if WindowConfig.WatermarkConfig.Enabled then
-		WatermarkFrame = SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(20, 20, 20), 0, 6), {
-			Parent = Orion,
-			Position = UDim2.new(0, 15, 0, 15),
-			Size = UDim2.new(0, 200, 0, 28),
-			BackgroundTransparency = 0.2,
-			BorderSizePixel = 0,
-			Name = "Watermark",
-			ZIndex = 100,
-			Active = true,
-			Draggable = true,
-		}), {
-			AddThemeObject(SetProps(MakeElement("Stroke"), {
-				Thickness = 1,
-				Transparency = 0.5,
-			}), "Stroke"),
-			MakeElement("Padding", 0, 10, 0, 10),
-		})
+		if WindowConfig.WatermarkConfig.Enabled then
+			WatermarkFrame = Create("Frame", {
+				Parent = Orion,
+				Position = UDim2.new(0, 15, 0, 15),
+				Size = UDim2.new(0, 200, 0, 28),
+				BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+				BackgroundTransparency = 0.2,
+				BorderSizePixel = 0,
+				Name = "Watermark",
+				ZIndex = 100,
+				Active = true,
+				Draggable = true,
+			}, {
+				Create("UICorner", {CornerRadius = UDim.new(0, 6)}),
+				Create("UIStroke", {
+					Color = Color3.fromRGB(100, 100, 100),
+					Thickness = 1,
+					Transparency = 0.5,
+				}),
+				Create("UIPadding", {
+					PaddingLeft = UDim.new(0, 10),
+					PaddingRight = UDim.new(0, 10),
+				})
+			})
 
-		WatermarkText = AddThemeObject(SetProps(MakeElement("Label", "", 13), {
-			Size = UDim2.new(1, 0, 1, 0),
-			Position = UDim2.new(0, 0, 0, 0),
-			Font = Enum.Font.GothamBlack,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			TextYAlignment = Enum.TextYAlignment.Center,
-			Name = "WatermarkText",
-			ZIndex = 101,
-		}), "Text")
-		WatermarkText.Parent = WatermarkFrame
+			WatermarkText = Create("TextLabel", {
+				Parent = WatermarkFrame,
+				Size = UDim2.new(1, 0, 1, 0),
+				Position = UDim2.new(0, 0, 0, 0),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.GothamBlack,
+				TextSize = 13,
+				TextColor3 = Color3.fromRGB(255, 255, 255),
+				TextXAlignment = Enum.TextXAlignment.Center,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				Name = "WatermarkText",
+				ZIndex = 101,
+				Text = "",
+			})
 
-		AddThemeObject(WatermarkFrame, "Main")
-		AddThemeObject(WatermarkFrame:FindFirstChild("Stroke"), "Stroke")
+			AddThemeObject(WatermarkFrame, "Main")
+			AddThemeObject(WatermarkFrame:FindFirstChild("UIStroke"), "Stroke")
+			AddThemeObject(WatermarkText, "Text")
 
-		local function UpdateWatermark()
-			local parts = {}
-			
-			if WindowConfig.WatermarkConfig.ShowName then
-				table.insert(parts, WindowConfig.Name)
+			local function UpdateWatermark()
+				local parts = {}
+				
+				if WindowConfig.WatermarkConfig.ShowName then
+					table.insert(parts, WindowConfig.Name)
+				end
+				
+				if WindowConfig.WatermarkConfig.ShowFPS then
+					table.insert(parts, tostring(math.floor(FPS)) .. " fps")
+				end
+				
+				if WindowConfig.WatermarkConfig.ShowPing then
+					local ping = 0
+					pcall(function()
+						ping = math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue())
+					end)
+					table.insert(parts, ping .. " ms")
+				end
+				
+				if WindowConfig.WatermarkConfig.ShowClockTime then
+					local timeStr = os.date("%H:%M:%S")
+					table.insert(parts, timeStr)
+				end
+
+				local text = table.concat(parts, " | ")
+				WatermarkText.Text = text
+				
+				local textWidth = WatermarkText.TextBounds.X + 20
+				WatermarkFrame.Size = UDim2.new(0, textWidth, 0, 28)
 			end
-			
-			if WindowConfig.WatermarkConfig.ShowFPS then
-				table.insert(parts, tostring(math.floor(FPS)) .. " fps")
-			end
-			
-			if WindowConfig.WatermarkConfig.ShowPing then
-				local ping = 0
-				pcall(function()
-					ping = math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue())
-				end)
-				table.insert(parts, ping .. " ms")
-			end
-			
-			if WindowConfig.WatermarkConfig.ShowClockTime then
-				local timeStr = os.date("%H:%M:%S")
-				table.insert(parts, timeStr)
-			end
 
-			local text = table.concat(parts, " | ")
-			WatermarkText.Text = text
-			
-			local textWidth = WatermarkText.TextBounds.X + 20
-			WatermarkFrame.Size = UDim2.new(0, textWidth, 0, 28)
+			WatermarkConnection = RunService.RenderStepped:Connect(function()
+				FrameCounter = FrameCounter + 1
+				
+				if (tick() - FrameTimer) >= 1 then
+					FPS = FrameCounter
+					FrameTimer = tick()
+					FrameCounter = 0
+				end
+				
+				UpdateWatermark()
+			end)
+
+			table.insert(OrionLib.Connections, WatermarkConnection)
 		end
-
-		WatermarkConnection = RunService.RenderStepped:Connect(function()
-			FrameCounter = FrameCounter + 1
-			
-			if (tick() - FrameTimer) >= 1 then
-				FPS = FrameCounter
-				FrameTimer = tick()
-				FrameCounter = 0
-			end
-			
-			UpdateWatermark()
-		end)
-
-		table.insert(OrionLib.Connections, WatermarkConnection)
-	end
 
 	-- Local window functions
 		if WindowConfig.ShowIcon then
