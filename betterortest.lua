@@ -454,6 +454,8 @@ function OrionLib:MakeWindow(WindowConfig)
 		WindowConfig.WatermarkConfig.ShowPing = WindowConfig.WatermarkConfig.ShowPing ~= nil and WindowConfig.WatermarkConfig.ShowPing or true
 		WindowConfig.WatermarkConfig.ShowName = WindowConfig.WatermarkConfig.ShowName ~= nil and WindowConfig.WatermarkConfig.ShowName or true
 		WindowConfig.WatermarkConfig.ShowClockTime = WindowConfig.WatermarkConfig.ShowClockTime ~= nil and WindowConfig.WatermarkConfig.ShowClockTime or false
+		WindowConfig.WatermarkConfig.Icon = WindowConfig.WatermarkConfig.Icon or nil
+		WindowConfig.WatermarkConfig.Transparency = WindowConfig.WatermarkConfig.Transparency or 0.2
 
 	-- Elements
 		local TabHolder = AddThemeObject(SetChildren(SetProps(MakeElement("ScrollFrame", Color3.fromRGB(255, 255, 255)), {
@@ -613,7 +615,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		}), "Main")
 
 		-- watermark
-		local WatermarkFrame, WatermarkText, WatermarkConnection
+		local WatermarkFrame, WatermarkText, WatermarkIcon, WatermarkConnection
 		local FrameTimer = tick()
 		local FrameCounter = 0
 		local FPS = 60
@@ -623,8 +625,8 @@ function OrionLib:MakeWindow(WindowConfig)
 				Parent = Orion,
 				Position = UDim2.new(0, 15, 0, 15),
 				Size = UDim2.new(0, 200, 0, 28),
-				BackgroundColor3 = Color3.fromRGB(20, 20, 20),
-				BackgroundTransparency = 0.2,
+				BackgroundColor3 = OrionLib.Themes[OrionLib.SelectedTheme].Main,
+				BackgroundTransparency = WindowConfig.WatermarkConfig.Transparency,
 				BorderSizePixel = 0,
 				Name = "Watermark",
 				ZIndex = 100,
@@ -633,15 +635,28 @@ function OrionLib:MakeWindow(WindowConfig)
 			}, {
 				Create("UICorner", {CornerRadius = UDim.new(0, 6)}),
 				Create("UIStroke", {
-					Color = Color3.fromRGB(100, 100, 100),
+					Color = OrionLib.Themes[OrionLib.SelectedTheme].Stroke,
 					Thickness = 1,
-					Transparency = 0.5,
+					Transparency = WindowConfig.WatermarkConfig.Transparency,
 				}),
 				Create("UIPadding", {
-					PaddingLeft = UDim.new(0, 10),
+					PaddingLeft = UDim.new(0, WindowConfig.WatermarkConfig.Icon and 32 or 10),
 					PaddingRight = UDim.new(0, 10),
 				})
 			})
+
+			if WindowConfig.WatermarkConfig.Icon then
+				WatermarkIcon = Create("ImageLabel", {
+					Parent = WatermarkFrame,
+					Size = UDim2.new(0, 16, 0, 16),
+					Position = UDim2.new(0, -18, 0.5, -8),
+					BackgroundTransparency = 1,
+					Image = GetLucideIcon(WindowConfig.WatermarkConfig.Icon) or "",
+					ImageColor3 = OrionLib.Themes[OrionLib.SelectedTheme].Text,
+					Name = "WatermarkIcon",
+					ZIndex = 101,
+				})
+			end
 
 			WatermarkText = Create("TextLabel", {
 				Parent = WatermarkFrame,
@@ -650,17 +665,13 @@ function OrionLib:MakeWindow(WindowConfig)
 				BackgroundTransparency = 1,
 				Font = Enum.Font.GothamBlack,
 				TextSize = 13,
-				TextColor3 = Color3.fromRGB(255, 255, 255),
+				TextColor3 = OrionLib.Themes[OrionLib.SelectedTheme].Text,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				TextYAlignment = Enum.TextYAlignment.Center,
 				Name = "WatermarkText",
 				ZIndex = 101,
 				Text = "",
 			})
-
-			AddThemeObject(WatermarkFrame, "Main")
-			AddThemeObject(WatermarkFrame:FindFirstChild("UIStroke"), "Stroke")
-			AddThemeObject(WatermarkText, "Text")
 
 			local function UpdateWatermark()
 				local parts = {}
@@ -689,7 +700,7 @@ function OrionLib:MakeWindow(WindowConfig)
 				local text = table.concat(parts, " | ")
 				WatermarkText.Text = text
 				
-				local textWidth = WatermarkText.TextBounds.X + 20
+				local textWidth = WatermarkText.TextBounds.X + (WindowConfig.WatermarkConfig.Icon and 38 or 20)
 				WatermarkFrame.Size = UDim2.new(0, textWidth, 0, 28)
 			end
 
@@ -1136,7 +1147,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		function TabFunction:SetWatermarkText(Text)
 			if WatermarkText then
 				WatermarkText.Text = tostring(Text)
-				local textWidth = WatermarkText.TextBounds.X + 20
+				local textWidth = WatermarkText.TextBounds.X + (WatermarkIcon and 38 or 20)
 				WatermarkFrame.Size = UDim2.new(0, textWidth, 0, 28)
 			end
 		end
@@ -1153,9 +1164,18 @@ function OrionLib:MakeWindow(WindowConfig)
 			end
 		end
 
+		function TabFunction:SetWatermarkIconColor(Color)
+			if WatermarkIcon then
+				WatermarkIcon.ImageColor3 = Color
+			end
+		end
+
 		function TabFunction:SetWatermarkTransparency(Transparency)
 			if WatermarkFrame then
 				WatermarkFrame.BackgroundTransparency = Transparency
+			end
+			if WatermarkFrame and WatermarkFrame:FindFirstChild("UIStroke") then
+				WatermarkFrame.UIStroke.Transparency = Transparency
 			end
 		end
 
