@@ -447,7 +447,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		WindowConfig.ToggleUIKey = WindowConfig.ToggleUIKey or Enum.KeyCode.Tab
 		WindowConfig.SearchBar = WindowConfig.SearchBar or true
 
-		-- WATERMARK ADDED: Конфиг ватермарка
+		-- watermark
 		WindowConfig.WatermarkConfig = WindowConfig.WatermarkConfig or {}
 		WindowConfig.WatermarkConfig.Enabled = WindowConfig.WatermarkConfig.Enabled or false
 		WindowConfig.WatermarkConfig.ShowFPS = WindowConfig.WatermarkConfig.ShowFPS ~= nil and WindowConfig.WatermarkConfig.ShowFPS or true
@@ -612,7 +612,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			WindowStuff
 		}), "Main")
 
-	-- WATERMARK ADDED: Создание ватермарка
+	-- watermark
 	local WatermarkFrame, WatermarkText, WatermarkConnection
 	local FrameTimer = tick()
 	local FrameCounter = 0
@@ -634,7 +634,7 @@ function OrionLib:MakeWindow(WindowConfig)
 				Thickness = 1,
 				Transparency = 0.5,
 			}), "Stroke"),
-			MakeElement("Padding", 4, 10, 4, 10),
+			MakeElement("Padding", 0, 10, 0, 10),
 		})
 
 		WatermarkText = AddThemeObject(SetProps(MakeElement("Label", "", 13), {
@@ -678,8 +678,8 @@ function OrionLib:MakeWindow(WindowConfig)
 			local text = table.concat(parts, " | ")
 			WatermarkText.Text = text
 			
-			local textWidth = WatermarkText.TextBounds.X + 24
-			TweenService:Create(WatermarkFrame, TweenInfo.new(0.1), {Size = UDim2.new(0, textWidth, 0, 28)}):Play()
+			local textWidth = WatermarkText.TextBounds.X + 20
+			WatermarkFrame.Size = UDim2.new(0, textWidth, 0, 28)
 		end
 
 		WatermarkConnection = RunService.RenderStepped:Connect(function()
@@ -1115,7 +1115,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			OrionLib.Themes[Theme][Element] = Color
 		end
 		
-		-- WATERMARK ADDED: Функции управления ватермарком
+		-- watermark
 		function TabFunction:SetWatermarkVisible(Bool)
 			if WatermarkFrame then
 				WatermarkFrame.Visible = Bool
@@ -1125,7 +1125,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		function TabFunction:SetWatermarkText(Text)
 			if WatermarkText then
 				WatermarkText.Text = tostring(Text)
-				local textWidth = WatermarkText.TextBounds.X + 24
+				local textWidth = WatermarkText.TextBounds.X + 20
 				WatermarkFrame.Size = UDim2.new(0, textWidth, 0, 28)
 			end
 		end
@@ -2910,6 +2910,9 @@ function OrionLib:MakeWindow(WindowConfig)
 end   
 
 function OrionLib:Destroy()
+	if WatermarkConnection then
+		WatermarkConnection:Disconnect()
+	end
 	Orion:Destroy()
 end
 
