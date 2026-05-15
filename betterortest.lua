@@ -621,7 +621,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		local FPS = 60
 
 		if WindowConfig.WatermarkConfig.Enabled then
-			local WatermarkBg = AddThemeObject(Create("Frame", {
+			WatermarkFrame = Create("Frame", {
 				Parent = Orion,
 				Position = UDim2.new(0, 15, 0, 15),
 				Size = UDim2.new(0, 200, 0, 28),
@@ -633,37 +633,33 @@ function OrionLib:MakeWindow(WindowConfig)
 				Draggable = true,
 			}, {
 				Create("UICorner", {CornerRadius = UDim.new(0, 6)}),
-			}), "Main")
-			WatermarkFrame = WatermarkBg
+			})
 
-			WatermarkStroke = AddThemeObject(Create("UIStroke", {
+			WatermarkStroke = Create("UIStroke", {
 				Parent = WatermarkFrame,
 				Thickness = 1,
 				Transparency = WindowConfig.WatermarkConfig.Transparency,
-			}), "Stroke")
-
-			Create("UIPadding", {
-				Parent = WatermarkFrame,
-				PaddingLeft = UDim.new(0, WindowConfig.WatermarkConfig.Icon and 32 or 10),
-				PaddingRight = UDim.new(0, 10),
 			})
 
+			local IconOffset = 0
 			if WindowConfig.WatermarkConfig.Icon then
-				WatermarkIcon = AddThemeObject(Create("ImageLabel", {
+				IconOffset = 22
+				WatermarkIcon = Create("ImageLabel", {
 					Parent = WatermarkFrame,
 					Size = UDim2.new(0, 16, 0, 16),
-					Position = UDim2.new(0, 6, 0.5, -8),
+					Position = UDim2.new(0, 8, 0.5, -8),
 					BackgroundTransparency = 1,
 					Image = GetLucideIcon(WindowConfig.WatermarkConfig.Icon) or "",
 					Name = "WatermarkIcon",
 					ZIndex = 101,
-				}), "Text")
+				})
+				AddThemeObject(WatermarkIcon, "Text")
 			end
 
-			WatermarkText = AddThemeObject(Create("TextLabel", {
+			WatermarkText = Create("TextLabel", {
 				Parent = WatermarkFrame,
-				Size = UDim2.new(1, 0, 1, 0),
-				Position = UDim2.new(0, 0, 0, 0),
+				Size = UDim2.new(1, -IconOffset - 16, 1, 0),
+				Position = UDim2.new(0, IconOffset + 8, 0, 0),
 				BackgroundTransparency = 1,
 				Font = Enum.Font.GothamBlack,
 				TextSize = 13,
@@ -672,7 +668,10 @@ function OrionLib:MakeWindow(WindowConfig)
 				Name = "WatermarkText",
 				ZIndex = 101,
 				Text = "",
-			}), "Text")
+			})
+			AddThemeObject(WatermarkText, "Text")
+			AddThemeObject(WatermarkFrame, "Main")
+			AddThemeObject(WatermarkStroke, "Stroke")
 
 			local function UpdateWatermark()
 				local parts = {}
@@ -701,7 +700,7 @@ function OrionLib:MakeWindow(WindowConfig)
 				local text = table.concat(parts, " | ")
 				WatermarkText.Text = text
 				
-				local textWidth = WatermarkText.TextBounds.X + (WindowConfig.WatermarkConfig.Icon and 38 or 20)
+				local textWidth = WatermarkText.TextBounds.X + IconOffset + 16
 				WatermarkFrame.Size = UDim2.new(0, textWidth, 0, 28)
 			end
 
