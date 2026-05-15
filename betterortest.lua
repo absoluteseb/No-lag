@@ -615,17 +615,16 @@ function OrionLib:MakeWindow(WindowConfig)
 		}), "Main")
 
 		-- watermark
-		local WatermarkFrame, WatermarkText, WatermarkIcon, WatermarkConnection
+		local WatermarkFrame, WatermarkText, WatermarkIcon, WatermarkStroke, WatermarkConnection
 		local FrameTimer = tick()
 		local FrameCounter = 0
 		local FPS = 60
 
 		if WindowConfig.WatermarkConfig.Enabled then
-			WatermarkFrame = Create("Frame", {
+			local WatermarkBg = AddThemeObject(Create("Frame", {
 				Parent = Orion,
 				Position = UDim2.new(0, 15, 0, 15),
 				Size = UDim2.new(0, 200, 0, 28),
-				BackgroundColor3 = OrionLib.Themes[OrionLib.SelectedTheme].Main,
 				BackgroundTransparency = WindowConfig.WatermarkConfig.Transparency,
 				BorderSizePixel = 0,
 				Name = "Watermark",
@@ -634,44 +633,46 @@ function OrionLib:MakeWindow(WindowConfig)
 				Draggable = true,
 			}, {
 				Create("UICorner", {CornerRadius = UDim.new(0, 6)}),
-				Create("UIStroke", {
-					Color = OrionLib.Themes[OrionLib.SelectedTheme].Stroke,
-					Thickness = 1,
-					Transparency = WindowConfig.WatermarkConfig.Transparency,
-				}),
-				Create("UIPadding", {
-					PaddingLeft = UDim.new(0, WindowConfig.WatermarkConfig.Icon and 32 or 10),
-					PaddingRight = UDim.new(0, 10),
-				})
+			}), "Main")
+			WatermarkFrame = WatermarkBg
+
+			WatermarkStroke = AddThemeObject(Create("UIStroke", {
+				Parent = WatermarkFrame,
+				Thickness = 1,
+				Transparency = WindowConfig.WatermarkConfig.Transparency,
+			}), "Stroke")
+
+			Create("UIPadding", {
+				Parent = WatermarkFrame,
+				PaddingLeft = UDim.new(0, WindowConfig.WatermarkConfig.Icon and 32 or 10),
+				PaddingRight = UDim.new(0, 10),
 			})
 
 			if WindowConfig.WatermarkConfig.Icon then
-				WatermarkIcon = Create("ImageLabel", {
+				WatermarkIcon = AddThemeObject(Create("ImageLabel", {
 					Parent = WatermarkFrame,
 					Size = UDim2.new(0, 16, 0, 16),
-					Position = UDim2.new(0, -18, 0.5, -8),
+					Position = UDim2.new(0, 6, 0.5, -8),
 					BackgroundTransparency = 1,
 					Image = GetLucideIcon(WindowConfig.WatermarkConfig.Icon) or "",
-					ImageColor3 = OrionLib.Themes[OrionLib.SelectedTheme].Text,
 					Name = "WatermarkIcon",
 					ZIndex = 101,
-				})
+				}), "Text")
 			end
 
-			WatermarkText = Create("TextLabel", {
+			WatermarkText = AddThemeObject(Create("TextLabel", {
 				Parent = WatermarkFrame,
 				Size = UDim2.new(1, 0, 1, 0),
 				Position = UDim2.new(0, 0, 0, 0),
 				BackgroundTransparency = 1,
 				Font = Enum.Font.GothamBlack,
 				TextSize = 13,
-				TextColor3 = OrionLib.Themes[OrionLib.SelectedTheme].Text,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				TextYAlignment = Enum.TextYAlignment.Center,
 				Name = "WatermarkText",
 				ZIndex = 101,
 				Text = "",
-			})
+			}), "Text")
 
 			local function UpdateWatermark()
 				local parts = {}
@@ -1174,8 +1175,8 @@ function OrionLib:MakeWindow(WindowConfig)
 			if WatermarkFrame then
 				WatermarkFrame.BackgroundTransparency = Transparency
 			end
-			if WatermarkFrame and WatermarkFrame:FindFirstChild("UIStroke") then
-				WatermarkFrame.UIStroke.Transparency = Transparency
+			if WatermarkStroke then
+				WatermarkStroke.Transparency = Transparency
 			end
 		end
 
