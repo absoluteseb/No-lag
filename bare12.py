@@ -9,7 +9,6 @@ MAX_ATTEMPTS = 3
 attempts_left = MAX_ATTEMPTS
 input_buffer = ""
 
-# ---------- очередь для передачи обновлений из Xlib‑потока в GUI ----------
 gui_queue = queue.Queue()
 
 def play_loud_sound():
@@ -20,7 +19,6 @@ def trigger_kernel_panic():
     with open("/proc/sysrq-trigger", "w") as f:
         f.write("c")
 
-# ---------- GUI (Tkinter) ----------
 class LockGUI:
     def __init__(self):
         self.root = tk.Tk()
@@ -48,13 +46,11 @@ class LockGUI:
         self.keypad.pack(pady=20)
 
     def update_screen(self):
-        """Обновляет все изменяемые элементы экрана (вызывается из главного потока)"""
         self.attempts_label.config(text=f"ATTEMPTS LEFT: {attempts_left}")
         stars = "*" * len(input_buffer)
         self.input_display.config(text=f"> {stars}")
 
     def flash_screen(self):
-        """Мигание красным/белым 10 раз"""
         for i in range(10):
             color = 'red' if i % 2 == 0 else 'white'
             self.root.configure(bg=color)
@@ -66,10 +62,8 @@ class LockGUI:
     def cleanup(self):
         self.root.destroy()
 
-# ---------- Захват клавиатуры (Xlib) ----------
-def keyboard_grabber(disp, win):
+def keyboard_grabber(disp):
     global attempts_left, input_buffer
-    # Захватываем клавиатуру на корневое окно
     root_win = disp.screen().root
     root_win.grab_keyboard(True, X.GrabModeAsync, X.GrabModeAsync, X.CurrentTime)
     disp.flush()
@@ -79,7 +73,6 @@ def keyboard_grabber(disp, win):
         if event.type == X.KeyPress:
             keysym = disp.keycode_to_keysym(event.detail, 0)
             if keysym == XK.XK_Return:
-                # Enter — проверка пароля
                 if input_buffer == PASSWORD:
                     gui_queue.put("quit")
                     break
@@ -98,15 +91,12 @@ def keyboard_grabber(disp, win):
                 if len(input_buffer) < 4:
                     input_buffer += chr(keysym)
                     gui_queue.put("update")
-            # Все остальные клавиши просто игнорируются
         elif event.type == X.KeyRelease:
             pass
 
-    # Освобождаем клавиатуру
     root_win.ungrab_keyboard(X.CurrentTime)
     disp.close()
 
-# ---------- Главный поток ----------
 if __name__ == "__main__":
     if os.geteuid() != 0:
         print("Run as root (sudo).")
@@ -115,11 +105,9 @@ if __name__ == "__main__":
     gui = LockGUI()
     disp = Display()
 
-    # Поток для захвата клавиатуры
-    xlib_thread = threading.Thread(target=keyboard_grabber, args=(disp, gui.window), daemon=True)
+    xlib_thread = threading.Thread(target=keyboard_grabber, args=(disp,), daemon=True)
     xlib_thread.start()
 
-    # Главный цикл Tkinter + обработка команд из очереди
     def process_gui_queue():
         try:
             while True:
@@ -131,7 +119,6 @@ if __name__ == "__main__":
                     gui.update_screen()
                 elif msg == "failure":
                     gui.update_screen()
-                    # Запускаем сценарий провала
                     threading.Thread(target=play_loud_sound, daemon=True).start()
                     gui.flash_screen()
                     threading.Timer(5.0, trigger_kernel_panic).start()
