@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-import os
-import sys
-import time
-import threading
+import os, sys, time, threading, subprocess
 from Xlib import X, XK
 from Xlib.display import Display
-import subprocess
 
 PASSWORD = "1488"
 MAX_ATTEMPTS = 3
@@ -45,20 +41,11 @@ class GrabLocker:
         self.window.map()
         self.display.flush()
 
-        self.window.grab_keyboard(
-            True, X.GrabModeAsync, X.GrabModeAsync, X.CurrentTime
-        )
+        self.window.grab_keyboard(True, X.GrabModeAsync, X.GrabModeAsync, X.CurrentTime)
         self.display.flush()
 
-        self.gc = self.window.create_gc(
-            foreground=self.color_green,
-            background=self.color_black,
-        )
-
-        # Шрифт: сначала пробуем fixed, потом cursor (есть всегда)
+        self.gc = self.window.create_gc(foreground=self.color_green, background=self.color_black)
         self.font = self.display.open_font("fixed")
-        if not self.font:
-            self.font = self.display.open_font("cursor")
 
         self.input_buffer = ""
         self.running = True
@@ -70,23 +57,16 @@ class GrabLocker:
             self.gc.change(foreground=self.color_red)
         elif color == "white":
             self.gc.change(foreground=self.color_white)
-        else:
-            self.gc.change(foreground=self.color_green)
-
-        # Текст должен быть латиницей (ASCII), кодируем в Latin-1
-        text_bytes = text.encode("latin-1")
-        self.window.draw_text(self.font, self.gc, self.width//2 - 200, y, text_bytes)
+        # draw_text expects list of strings; we'll pass a list with a single string
+        self.window.draw_text(self.font, self.gc, self.width//2 - 200, y, [text])
         self.display.flush()
 
     def redraw_screen(self):
         self.window.clear_area(0, 0, self.width, self.height)
-
         self.draw_text("YOU ARE LOCKED. GUESS 4-DIGIT PASSWORD", 50, "green")
         self.draw_text(f"ATTEMPTS LEFT: {attempts_left}", 100, "green")
-
         stars = "*" * len(self.input_buffer)
         self.draw_text(f"> {stars}", 150, "green")
-
         keys = ["1 2 3", "4 5 6", "7 8 9", "   0"]
         for i, line in enumerate(keys):
             self.draw_text(line, 210 + i*40, "green")
